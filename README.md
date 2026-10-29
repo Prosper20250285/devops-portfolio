@@ -139,3 +139,8 @@ improvement as something that happened unless it reflects our actual work.
 - [ ] Capture the requested GitHub and Trello screenshots.
 - [ ] Add the verified published-portfolio URL and Albert's repository link.
 - [ ] Create the PDF report and write my own 250–350 word reflection.
+
+## Portifolio Images
+![alt text](<photos/Screenshot 2026-06-28 095013.png>)
+![alt text](image.png)
+![alt text](<photos/Screenshot 2026-10-29 115018.png>)
