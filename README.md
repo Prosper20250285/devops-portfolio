@@ -140,6 +140,17 @@ improvement as something that happened unless it reflects our actual work.
 - [ ] Add the verified published-portfolio URL and Albert's repository link.
 - [ ] Create the PDF report and write my own 250–350 word reflection.
 
+## Portfolio browser tests and logs
+
+I use [`test-logging.html`](./test-logging.html) to test the actual portfolio
+in [`index.html`](./index.html). The eight browser checks and their expected
+results are documented in [`TEST_PLAN.md`](./TEST_PLAN.md). I open
+`test-logging.html`, select **Run portfolio tests**, then select **Download
+log** and save the timestamped `.txt` file in `logs/`. The log records the
+date, page URL, browser and version, operating system, test IDs, expected and
+actual results, durations, failure details, and run summary. TC-08 deliberately
+records the missing `#resume` section as a failure and does not stop the run.
+
 ## Portifolio Images
 ![alt text](<photos/Screenshot 2026-06-28 095013.png>)
 ![alt text](image.png)

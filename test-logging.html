@@ -1,0 +1,272 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Assignment3_TestLogging</title>
+  <style>
+    :root {
+      --ink: #162033;
+      --muted: #667085;
+      --blue: #155eef;
+      --green: #08783f;
+      --red: #b42318;
+      --amber: #b54708;
+      --line: #dfe5ef;
+    }
+    * { box-sizing: border-box; }
+    body { margin: 0; font-family: Georgia, "Times New Roman", serif; background: #f3f6fb; color: var(--ink); }
+    main { max-width: 1050px; margin: 0 auto; padding: 36px 20px 56px; }
+    h1 { margin: 0 0 8px; font-family: "Trebuchet MS", sans-serif; }
+    .intro { margin: 0 0 24px; color: var(--muted); }
+    .toolbar { display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 20px; }
+    button { border: 0; border-radius: 6px; padding: 11px 16px; font-weight: 700; cursor: pointer; }
+    #runTests { background: var(--blue); color: white; }
+    #downloadLog { background: #24324a; color: white; }
+    button:disabled { cursor: not-allowed; opacity: .55; }
+    .summary { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; margin-bottom: 16px; }
+    .metric { background: white; border: 1px solid var(--line); border-radius: 8px; padding: 14px; }
+    .metric strong { display: block; font-family: "Trebuchet MS", sans-serif; font-size: 1.55rem; }
+    .metric span { color: var(--muted); }
+    .console { min-height: 330px; max-height: 520px; overflow: auto; background: #101827; color: #edf4ff; padding: 18px; border-radius: 8px; white-space: pre-wrap; font: .82rem/1.55 Consolas, monospace; }
+    .note { margin-top: 14px; color: var(--muted); font-size: .9rem; line-height: 1.5; }
+    .frame-wrap { margin-top: 24px; }
+    .frame-wrap h2 { font-family: "Trebuchet MS", sans-serif; font-size: 1.1rem; }
+    #portfolioFrame { width: 100%; height: 600px; border: 1px solid var(--line); border-radius: 8px; background: white; }
+    @media (max-width: 650px) { .summary { grid-template-columns: repeat(2, 1fr); } }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>Assignment3_TestLogging</h1>
+    <p class="intro">Run and download browser test logs for the DevOps portfolio in <code>index.html</code>.</p>
+    <div class="toolbar">
+      <button id="runTests" type="button">Run portfolio tests</button>
+      <button id="downloadLog" type="button" disabled>Download log</button>
+    </div>
+    <div class="summary" aria-label="Test summary">
+      <div class="metric"><strong id="totalMetric">0</strong><span>Total tests</span></div>
+      <div class="metric"><strong id="passMetric">0</strong><span>Passed</span></div>
+      <div class="metric"><strong id="failMetric">0</strong><span>Failed</span></div>
+      <div class="metric"><strong id="durationMetric">0.0 s</strong><span>Duration</span></div>
+    </div>
+    <pre id="console" class="console" aria-live="polite">Logs will appear here after the test run.</pre>
+    <p class="note">TC-07 is an intentional negative test for the missing <code>#resume</code> section. It is expected to be logged as a failure; the runner continues so all results are collected. After a run, select <strong>Download log</strong> and save the file in the repository's <code>logs</code> folder.</p>
+    <section class="frame-wrap" aria-label="Portfolio preview">
+      <h2>Portfolio under test</h2>
+      <iframe id="portfolioFrame" src="index.html" title="Portfolio under test"></iframe>
+    </section>
+  </main>
+
+  <script>
+    const runButton = document.getElementById("runTests");
+    const downloadButton = document.getElementById("downloadLog");
+    const output = document.getElementById("console");
+    const frame = document.getElementById("portfolioFrame");
+    let logLines = [];
+    let logBlobName = "";
+
+    const pad = (value) => String(value).padStart(2, "0");
+
+    function timestamp(date = new Date()) {
+      return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}:${pad(date.getSeconds())}`;
+    }
+
+    function log(level, details) {
+      const line = `${timestamp()} | ${level.padEnd(7)} | ${details}`;
+      logLines.push(line);
+      output.textContent = logLines.join("\n");
+      output.scrollTop = output.scrollHeight;
+    }
+
+    async function waitForFrame() {
+      if (frame.contentDocument?.readyState === "complete") return;
+      await new Promise((resolve, reject) => {
+        const timeout = window.setTimeout(() => reject(new Error("Portfolio page did not finish loading within 15 seconds")), 15000);
+        frame.addEventListener("load", () => {
+          window.clearTimeout(timeout);
+          resolve();
+        }, { once: true });
+        frame.addEventListener("error", () => {
+          window.clearTimeout(timeout);
+          reject(new Error("Portfolio page could not be loaded from index.html"));
+        }, { once: true });
+      });
+    }
+
+    function clickAnchor(selector) {
+      const anchor = frame.contentDocument?.querySelector(selector);
+      if (!anchor) throw new Error(`Locator not found: ${selector}`);
+      anchor.click();
+      return anchor;
+    }
+
+    async function testInternalLink(selector, expectedHash) {
+      const sectionId = expectedHash.slice(1);
+      const section = frame.contentDocument?.getElementById(sectionId);
+      if (!section) throw new Error(`Expected section #${sectionId} was not found`);
+      frame.contentWindow.location.hash = "";
+      const anchor = clickAnchor(selector);
+      await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+      const actualHash = frame.contentWindow.location.hash;
+      if (actualHash !== expectedHash) throw new Error(`Expected ${expectedHash}, but URL ended in ${actualHash || "(no hash)"}`);
+      if (!section.getClientRects().length) throw new Error(`Section ${expectedHash} is not visible`);
+      return `"${anchor.textContent.trim()}" navigated to ${frame.contentWindow.location.href}; section visible`;
+    }
+
+    function testLinkTarget(selector, expectedHref, expectedTarget) {
+      const anchor = clickAnchor(selector);
+      anchor.addEventListener("click", (event) => event.preventDefault(), { once: true });
+      anchor.click();
+      if (anchor.getAttribute("href") !== expectedHref) throw new Error(`Expected href ${expectedHref}, found ${anchor.getAttribute("href")}`);
+      if (expectedTarget && anchor.getAttribute("target") !== expectedTarget) throw new Error(`Expected target ${expectedTarget}, found ${anchor.getAttribute("target") || "(none)"}`);
+      return `href=${anchor.getAttribute("href")}${expectedTarget ? `; target=${anchor.target}` : ""}`;
+    }
+
+    function browserDetails() {
+      const userAgent = navigator.userAgent;
+      const browserMatch = userAgent.match(/Edg\/([\d.]+)/) || userAgent.match(/Chrome\/([\d.]+)/) || userAgent.match(/Firefox\/([\d.]+)/) || userAgent.match(/Version\/([\d.]+).*Safari/);
+      const browserName = userAgent.includes("Edg/") ? "Microsoft Edge" : userAgent.includes("Firefox/") ? "Firefox" : userAgent.includes("Chrome/") ? "Chrome" : userAgent.includes("Safari/") ? "Safari" : "Unknown browser";
+      const operatingSystem = navigator.userAgentData?.platform || navigator.platform || "Unknown OS";
+      return `${browserName}${browserMatch ? ` ${browserMatch[1]}` : ""} | operating system: ${operatingSystem}`;
+    }
+
+    const tests = [
+      {
+        id: "TC-01",
+        what: 'Click "About" in the main menu',
+        expected: 'URL ends with #about and the section is visible',
+        run: () => testInternalLink('nav a[href="#about"]', "#about")
+      },
+      {
+        id: "TC-02",
+        what: 'Click "Collaboration" in the main menu',
+        expected: 'URL ends with #collaboration and the section is visible',
+        run: () => testInternalLink('nav a[href="#collaboration"]', "#collaboration")
+      },
+      {
+        id: "TC-03",
+        what: 'Click "Tasks Table" in the main menu',
+        expected: 'URL ends with #tasks and the section is visible',
+        run: () => testInternalLink('nav a[href="#tasks"]', "#tasks")
+      },
+      {
+        id: "TC-04",
+        what: 'Click "Contact" in the main menu',
+        expected: 'URL ends with #contact and the section is visible',
+        run: () => testInternalLink('nav a[href="#contact"]', "#contact")
+      },
+      {
+        id: "TC-05",
+        what: 'Check the support email link',
+        expected: 'Email link is mailto:sjitc2010@yahoo.fr',
+        run: () => testLinkTarget('#contact a[href^="mailto:"]', "mailto:sjitc2010@yahoo.fr")
+      },
+      {
+        id: "TC-06",
+        what: 'Check the institution website link',
+        expected: 'Website link is http://www.sjitc.ac.rw and opens in a new tab',
+        run: () => testLinkTarget('#contact a[href="http://www.sjitc.ac.rw"]', "http://www.sjitc.ac.rw", "_blank")
+      },
+      {
+        id: "TC-07",
+        what: "Check portfolio images and alternative text",
+        expected: "All portfolio images have alt text and load successfully",
+        run: async () => {
+          const images = [...(frame.contentDocument?.querySelectorAll("img") || [])];
+          if (images.length === 0) throw new Error("No portfolio images were found");
+          for (const [index, image] of images.entries()) {
+            if (!image.alt.trim()) throw new Error(`Image ${index + 1} is missing alternative text`);
+            if (!image.complete || image.naturalWidth === 0) throw new Error(`Image "${image.alt}" did not load (${image.getAttribute("src")})`);
+          }
+          return `${images.length} images loaded with alternative text`;
+        }
+      },
+      {
+        id: "TC-08",
+        what: 'Negative test: locate the intentionally missing Resume section',
+        expected: 'Section #resume exists (intentional negative test expects it to be missing)',
+        expectedFailure: true,
+        run: () => {
+          const missingSection = frame.contentDocument?.querySelector("#resume");
+          if (missingSection) return "Section #resume exists";
+          throw new Error("Section #resume was not found (expected negative-test result)");
+        }
+      }
+    ];
+
+    runButton.addEventListener("click", async () => {
+      runButton.disabled = true;
+      downloadButton.disabled = true;
+      logLines = [];
+      output.textContent = "";
+      const runStart = performance.now();
+      let passed = 0;
+      let failed = 0;
+      const expectedFailures = [];
+      try {
+        await waitForFrame();
+        log("INFO", `RUN START | date/time: ${timestamp()} | website: ${frame.contentWindow.location.href} | browser: ${browserDetails()}`);
+
+        for (const test of tests) {
+          const testStart = performance.now();
+          try {
+            const actual = await test.run();
+            if (test.expectedFailure) {
+              failed += 1;
+              expectedFailures.push(test.id);
+              log("ERROR", `${test.id} | ${test.what} | expected: ${test.expected} | actual: ${actual} | FAIL (expected negative-test failure) | ${((performance.now() - testStart) / 1000).toFixed(3)} s | page: ${frame.contentWindow.location.href}`);
+            } else {
+              passed += 1;
+              log("INFO", `${test.id} | ${test.what} | expected: ${test.expected} | actual: ${actual} | PASS | ${((performance.now() - testStart) / 1000).toFixed(3)} s | page: ${frame.contentWindow.location.href}`);
+            }
+          } catch (error) {
+            if (test.expectedFailure) {
+              failed += 1;
+              expectedFailures.push(test.id);
+              log("ERROR", `${test.id} | ${test.what} | expected: ${test.expected} | actual: ${error.message} | FAIL (expected negative-test failure) | ${((performance.now() - testStart) / 1000).toFixed(3)} s | page: ${frame.contentWindow.location.href}`);
+            } else {
+              failed += 1;
+              log("ERROR", `${test.id} | ${test.what} | expected: ${test.expected} | actual: ${error.message} | FAIL | ${((performance.now() - testStart) / 1000).toFixed(3)} s | error: ${error.message} | page: ${frame.contentWindow.location.href}`);
+            }
+          }
+        }
+
+        const duration = (performance.now() - runStart) / 1000;
+        log("INFO", `RUN END | total: ${tests.length} | passed: ${passed} | failed: ${failed} | expected negative failures: ${expectedFailures.join(", ") || "none"} | duration: ${duration.toFixed(3)} s`);
+        document.getElementById("totalMetric").textContent = tests.length;
+        document.getElementById("passMetric").textContent = passed;
+        document.getElementById("failMetric").textContent = failed;
+        document.getElementById("durationMetric").textContent = `${duration.toFixed(1)} s`;
+
+        logBlobName = `portfolio-test-log-${new Date().toISOString().replace(/[:.]/g, "-")}.txt`;
+        downloadButton.disabled = false;
+      } catch (error) {
+        failed += 1;
+        log("ERROR", `RUN ERROR | expected: portfolio test page to load | actual: ${error.message} | FAIL | page: ${frame.src}`);
+        log("INFO", `RUN END | total: ${tests.length} | passed: ${passed} | failed: ${failed} | duration: ${((performance.now() - runStart) / 1000).toFixed(3)} s`);
+        document.getElementById("totalMetric").textContent = tests.length;
+        document.getElementById("passMetric").textContent = passed;
+        document.getElementById("failMetric").textContent = failed;
+        document.getElementById("durationMetric").textContent = `${((performance.now() - runStart) / 1000).toFixed(1)} s`;
+        logBlobName = `portfolio-test-log-${new Date().toISOString().replace(/[:.]/g, "-")}.txt`;
+        downloadButton.disabled = false;
+      } finally {
+        runButton.disabled = false;
+      }
+    });
+
+    downloadButton.addEventListener("click", () => {
+      const blob = new Blob([`${logLines.join("\n")}\n`], { type: "text/plain;charset=utf-8" });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = logBlobName;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+    });
+  </script>
+</body>
+</html>
